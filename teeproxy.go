@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -24,12 +25,6 @@ type Hosts struct {
 	Target      url.URL
 	Alternative url.URL
 }
-
-type nopCloser struct {
-	io.Reader
-}
-
-func (nopCloser) Close() error { return nil }
 
 type myTransport struct {
 }
@@ -97,8 +92,10 @@ func singleJoiningSlash(a, b string) string {
 
 func duplicateRequest(request *http.Request) (request1 *http.Request) {
 	b1 := new(bytes.Buffer)
-	io.Copy(b1, request.Body)
-	defer request.Body.Close()
+	b2 := new(bytes.Buffer)
+	w := io.MultiWriter(b1, b2)
+	io.Copy(w, request.Body)
+	request.Body = ioutil.NopCloser(bytes.NewReader(b2.Bytes()))
 	request1 = &http.Request{
 		Method:        request.Method,
 		URL:           request.URL,
@@ -106,7 +103,7 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 		ProtoMajor:    1,
 		ProtoMinor:    1,
 		Header:        request.Header,
-		Body:          nopCloser{b1},
+		Body:          ioutil.NopCloser(bytes.NewReader(b1.Bytes())),
 		Host:          request.Host,
 		ContentLength: request.ContentLength,
 	}
