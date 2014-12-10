@@ -48,6 +48,7 @@ func (t *myTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 }
 
 func teeDirector(req *http.Request) {
+	fmt.Printf("[<Request Protocol>][<%v>]\n", req.Proto)
 	fmt.Printf("[<Request>][<%v>]\n", req)
 	req2 := duplicateRequest(req)
 
