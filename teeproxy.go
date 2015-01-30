@@ -145,7 +145,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	u, _ := url.Parse(*targetProduction)
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.Transport = &TimeoutTransport{
-		RoundTripTimeout: time.Millisecond * 5000,
+		RoundTripTimeout: time.Second * 60,
 	}
 	proxy.Director = teeDirector
 
