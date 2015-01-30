@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -26,25 +25,47 @@ type Hosts struct {
 	Alternative url.URL
 }
 
-type myTransport struct {
-}
-
 var hosts Hosts
 
-func (t *myTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	response, err := http.DefaultTransport.RoundTrip(request)
+type TimeoutTransport struct {
+	http.Transport
+	RoundTripTimeout time.Duration
+}
 
-	if response != nil {
-		r, err := httputil.DumpResponse(response, true)
-		if err != nil {
-			// copying the response body did not work
-			return nil, err
+type respAndErr struct {
+	resp *http.Response
+	err  error
+}
+
+type netTimeoutError struct {
+	error
+}
+
+func (ne netTimeoutError) Timeout() bool { return true }
+
+// If you don't set RoundTrip on TimeoutTransport, this will always timeout at 0
+func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	timeout := time.After(t.RoundTripTimeout)
+	resp := make(chan respAndErr, 1)
+
+	go func() {
+		r, e := t.Transport.RoundTrip(req)
+
+		resp <- respAndErr{
+			resp: r,
+			err:  e,
 		}
+	}()
 
-		fmt.Printf("[<A Response>][<%v>]\n", string(r))
+	select {
+	case <-timeout: // A round trip timeout has occurred.
+		t.Transport.CancelRequest(req)
+		return nil, netTimeoutError{
+			error: fmt.Errorf("timed out after %s", t.RoundTripTimeout),
+		}
+	case r := <-resp: // Success!
+		return r.resp, r.err
 	}
-
-	return response, err
 }
 
 func teeDirector(req *http.Request) {
@@ -58,14 +79,23 @@ func teeDirector(req *http.Request) {
 				fmt.Println("Recovered in f", r)
 			}
 		}()
-		client_tcp_conn, _ := net.DialTimeout("tcp", hosts.Alternative.Host, time.Duration(1*time.Second))
-		client_http_conn := httputil.NewClientConn(client_tcp_conn, nil)
-		client_http_conn.Write(req2)
-		resp, _ := client_http_conn.Read(req2)
-		r, _ := httputil.DumpResponse(resp, true)
-		fmt.Printf("[<B Response>][<%v>]\n", string(r))
 
-		client_http_conn.Close()
+		client := &http.Client{
+			Transport: &TimeoutTransport{
+				RoundTripTimeout: time.Millisecond * 2000,
+			},
+		}
+
+		resp, err := client.Do(req2)
+
+		if err != nil {
+			r, _ := httputil.DumpResponse(resp, true)
+			fmt.Printf("[<B Response>][<%v>]\n", string(r))
+		} else {
+			fmt.Errorf("[<B Error>][<%v>]", err)
+		}
+
+		resp.Body.Close()
 	}()
 
 	targetQuery := hosts.Target.RawQuery
@@ -114,7 +144,9 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 func handler(w http.ResponseWriter, r *http.Request) {
 	u, _ := url.Parse(*targetProduction)
 	proxy := httputil.NewSingleHostReverseProxy(u)
-	proxy.Transport = &myTransport{}
+	proxy.Transport = &TimeoutTransport{
+		RoundTripTimeout: time.Millisecond * 5000,
+	}
 	proxy.Director = teeDirector
 
 	proxy.ServeHTTP(w, r)
