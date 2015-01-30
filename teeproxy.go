@@ -98,6 +98,8 @@ func teeDirector(req *http.Request) {
 		resp.Body.Close()
 	}()
 
+	fmt.Printf("Req 1 URL %v", req.URL.Host)
+
 	targetQuery := hosts.Target.RawQuery
 	req.URL.Scheme = hosts.Target.Scheme
 	req.URL.Host = hosts.Target.Host
@@ -127,18 +129,22 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 	w := io.MultiWriter(b1, b2)
 	io.Copy(w, request.Body)
 	request.Body = ioutil.NopCloser(bytes.NewReader(b2.Bytes()))
-	request1 = &http.Request{
-		Method:        request.Method,
-		URL:           request.URL,
+	request2 := &http.Request{
+		Method: request.Method,
+		URL: &url.URL{
+			Scheme: hosts.Alternative.Scheme,
+			Host:   hosts.Alternative.Host,
+			Path:   singleJoiningSlash(hosts.Alternative.Path, request.URL.Path),
+		},
 		Proto:         "HTTP/1.1",
 		ProtoMajor:    1,
 		ProtoMinor:    1,
 		Header:        request.Header,
 		Body:          ioutil.NopCloser(bytes.NewReader(b1.Bytes())),
-		Host:          request.Host,
 		ContentLength: request.ContentLength,
 	}
-	return
+
+	return request2
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
