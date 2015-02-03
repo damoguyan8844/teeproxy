@@ -80,25 +80,23 @@ func teeDirector(req *http.Request) {
 			}
 		}()
 
-		client := &http.Client{
-			Transport: &TimeoutTransport{
-				RoundTripTimeout: time.Millisecond * 2000,
-			},
-		}
-
+		client := &http.Client{}
+		client.Timeout = time.Millisecond * 2000
 		resp, err := client.Do(req2)
 
 		if err != nil {
-			r, _ := httputil.DumpResponse(resp, true)
-			fmt.Printf("[<B Response>][<%v>]\n", string(r))
+			fmt.Printf("[<B Error>][<%v>]\n", err)
 		} else {
-			fmt.Errorf("[<B Error>][<%v>]", err)
+			r, e := httputil.DumpResponse(resp, true)
+			if e != nil {
+				fmt.Printf("[<B Error Dump>][<%v>]", e)
+			} else {
+				fmt.Printf("[<B Resp>][<%v>]", string(r))
+			}
 		}
 
 		resp.Body.Close()
 	}()
-
-	fmt.Printf("Req 1 URL %v", req.URL.Host)
 
 	targetQuery := hosts.Target.RawQuery
 	req.URL.Scheme = hosts.Target.Scheme
