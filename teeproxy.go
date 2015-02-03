@@ -27,6 +27,7 @@ type Hosts struct {
 
 var hosts Hosts
 var client *http.Client
+var proxy *httputil.ReverseProxy
 
 type TimeoutTransport struct {
 	http.Transport
@@ -146,13 +147,6 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	u, _ := url.Parse(*targetProduction)
-	proxy := httputil.NewSingleHostReverseProxy(u)
-	proxy.Transport = &TimeoutTransport{
-		RoundTripTimeout: time.Second * 60,
-	}
-	proxy.Director = teeDirector
-
 	proxy.ServeHTTP(w, r)
 }
 
@@ -169,6 +163,13 @@ func main() {
 		Target:      *target,
 		Alternative: *alt,
 	}
+
+	u, _ := url.Parse(*targetProduction)
+	proxy = httputil.NewSingleHostReverseProxy(u)
+	proxy.Transport = &TimeoutTransport{
+		RoundTripTimeout: time.Second * 60,
+	}
+	proxy.Director = teeDirector
 
 	http.HandleFunc("/", handler)
 	http.ListenAndServe(*listen, nil)
