@@ -26,6 +26,7 @@ type Hosts struct {
 }
 
 var hosts Hosts
+var client *http.Client
 
 type TimeoutTransport struct {
 	http.Transport
@@ -80,8 +81,6 @@ func teeDirector(req *http.Request) {
 			}
 		}()
 
-		client := &http.Client{}
-		client.Timeout = time.Millisecond * 2000
 		resp, err := client.Do(req2)
 
 		if err != nil {
@@ -161,6 +160,9 @@ func main() {
 
 	target, _ := url.Parse(*targetProduction)
 	alt, _ := url.Parse(*altTarget)
+	client = &http.Client{
+		Timeout: time.Millisecond * 2000,
+	}
 
 	hosts = Hosts{
 		Target:      *target,
