@@ -94,6 +94,7 @@ func teeDirector(req *http.Request) {
 			}
 		}
 
+		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
