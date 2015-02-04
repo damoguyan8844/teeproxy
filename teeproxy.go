@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"code.google.com/p/go-uuid/uuid"
 )
 
 var (
@@ -71,8 +73,8 @@ func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func teeDirector(req *http.Request) {
-	fmt.Printf("[<Request Protocol>][<%v>]\n", req.Proto)
-	fmt.Printf("[<Request>][<%v>]\n", req)
+	id := uuid.NewUUID().String()
+	fmt.Printf("[%v][%v][<Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, req)
 	req2 := duplicateRequest(req)
 
 	go func() {
@@ -85,13 +87,13 @@ func teeDirector(req *http.Request) {
 		resp, err := client.Do(req2)
 
 		if err != nil {
-			fmt.Printf("[<B Error>][<%v>]\n", err)
+			logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
 		} else {
 			r, e := httputil.DumpResponse(resp, true)
 			if e != nil {
-				fmt.Printf("[<B Error Dump>][<%v>]", e)
+				logMessage("[%v][%v][<B Error Dump>][<%v>]", id, e)
 			} else {
-				fmt.Printf("[<B Resp>][<%v>]", string(r))
+				logMessage("[%v][%v][<B Resp>][<%v>]", id, r)
 			}
 		}
 
@@ -108,6 +110,10 @@ func teeDirector(req *http.Request) {
 	} else {
 		req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 	}
+}
+
+func logMessage(message string, id string, logObj interface{}) {
+	fmt.Printf(message, time.Now().Format(time.RFC3339Nano), id, logObj)
 }
 
 func singleJoiningSlash(a, b string) string {
