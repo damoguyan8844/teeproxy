@@ -58,9 +58,9 @@ func teeDirector(req *http.Request) {
 		} else {
 			r, e := httputil.DumpResponse(resp, true)
 			if e != nil {
-				logMessage("[%v][%v][<B Error Dump>][<%v>]", id, e)
+				logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
 			} else {
-				logMessage("[%v][%v][<B Resp>][<%v>]", id, r)
+				logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
 			}
 		}
 
@@ -109,9 +109,9 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 			Path:     singleJoiningSlash(hosts.Alternative.Path, request.URL.Path),
 			RawQuery: request.URL.RawQuery,
 		},
-		Proto:         "HTTP/1.1",
-		ProtoMajor:    1,
-		ProtoMinor:    1,
+		Proto:         request.Proto,
+		ProtoMajor:    request.ProtoMajor,
+		ProtoMinor:    request.ProtoMinor,
 		Header:        request.Header,
 		Body:          ioutil.NopCloser(bytes.NewReader(b1.Bytes())),
 		ContentLength: request.ContentLength,
