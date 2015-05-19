@@ -44,29 +44,31 @@ func teeDirector(req *http.Request) {
 	fmt.Printf("[%v][%v][<Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, req)
 	req2 := duplicateRequest(req)
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil && *debug {
-				fmt.Println("Recovered in f", r)
-			}
-		}()
-
-		resp, err := client.Do(req2)
-
-		if err != nil {
-			logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
-		} else {
-			r, e := httputil.DumpResponse(resp, true)
-			if e != nil {
-				logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
-			} else {
-				logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
-			}
+	/*go func() {
+	defer func() {
+		if r := recover(); r != nil && *debug {
+			fmt.Println("Recovered in f", r)
 		}
+	}()*/
 
-		io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	fmt.Printf("[%v][%v][<Dup Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, req2)
+
+	resp, err := client.Do(req2)
+
+	if err != nil {
+		logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
+	} else {
+		r, e := httputil.DumpResponse(resp, true)
+		if e != nil {
+			logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
+		} else {
+			logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
+		}
+	}
+
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+	//}()
 
 	targetQuery := hosts.Target.RawQuery
 	req.URL.Scheme = hosts.Target.Scheme
