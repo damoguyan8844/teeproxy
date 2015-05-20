@@ -20,7 +20,6 @@ var (
 	listen           = flag.String("l", ":8888", "port to accept requests")
 	targetProduction = flag.String("a", "http://localhost:8080", "where production traffic goes. http://localhost:8080/production")
 	altTarget        = flag.String("b", "http://localhost:8081", "where testing traffic goes. response are skipped. http://localhost:8081/test")
-	debug            = flag.Bool("debug", false, "more logging, showing ignored output")
 )
 
 type Hosts struct {
@@ -40,36 +39,35 @@ func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return t.Transport.RoundTrip(req)
 }
 
+func clientCall(id string, req, req2 *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered in f", r)
+		}
+	}()
+
+	resp, err := client.Do(req2)
+
+	if err != nil {
+		logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
+	} else {
+		r, e := httputil.DumpResponse(resp, true)
+		if e != nil {
+			logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
+		} else {
+			logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
+		}
+	}
+
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+}
+
 func teeDirector(req *http.Request) {
 	id := uuid.NewUUID().String()
-	fmt.Printf("[%v][%v][<Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, prettyPrintRequest(req))
-	req2 := duplicateRequest(req)
+	fmt.Printf("[%v][%v][<Request>][<%+v>]\n", time.Now().Format(time.RFC3339Nano), id, req)
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil && *debug {
-				fmt.Println("Recovered in f", r)
-			}
-		}()
-
-		fmt.Printf("[%v][%v][<Dup Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, prettyPrintRequest(req2))
-
-		resp, err := client.Do(req2)
-
-		if err != nil {
-			logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
-		} else {
-			r, e := httputil.DumpResponse(resp, true)
-			if e != nil {
-				logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
-			} else {
-				logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
-			}
-		}
-
-		io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	go clientCall(id, req, duplicateRequest(req))
 
 	targetQuery := hosts.Target.RawQuery
 	req.URL.Scheme = hosts.Target.Scheme
@@ -80,8 +78,6 @@ func teeDirector(req *http.Request) {
 	} else {
 		req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 	}
-
-	fmt.Printf("[%v][%v][<F Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, prettyPrintRequest(req))
 }
 
 func logMessage(message string, id string, logObj interface{}) {
@@ -106,6 +102,8 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 	w := io.MultiWriter(b1, b2)
 	io.Copy(w, request.Body)
 	request.Body = ioutil.NopCloser(bytes.NewReader(b2.Bytes()))
+	bodyReader := ioutil.NopCloser(bytes.NewReader(b1.Bytes()))
+
 	request2 := &http.Request{
 		Method: request.Method,
 		URL: &url.URL{
@@ -118,7 +116,7 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 		ProtoMajor:    request.ProtoMajor,
 		ProtoMinor:    request.ProtoMinor,
 		Header:        request.Header,
-		Body:          ioutil.NopCloser(bytes.NewReader(b1.Bytes())),
+		Body:          bodyReader,
 		ContentLength: request.ContentLength,
 	}
 
@@ -126,6 +124,12 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	dump, e := httputil.DumpRequest(r, true)
+	if e != nil {
+		logMessage("[%v][%v][<In Error Dump>][<%v>]\n", "", e)
+	} else {
+		logMessage("[%v][%v][<In Req>][<%v>]\n", "", string(dump))
+	}
 	proxy.ServeHTTP(w, r)
 }
 
