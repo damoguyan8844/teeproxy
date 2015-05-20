@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -41,34 +42,34 @@ func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 func teeDirector(req *http.Request) {
 	id := uuid.NewUUID().String()
-	fmt.Printf("[%v][%v][<Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, req)
+	fmt.Printf("[%v][%v][<Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, prettyPrintRequest(req))
 	req2 := duplicateRequest(req)
 
-	/*go func() {
-	defer func() {
-		if r := recover(); r != nil && *debug {
-			fmt.Println("Recovered in f", r)
-		}
-	}()*/
+	go func() {
+		defer func() {
+			if r := recover(); r != nil && *debug {
+				fmt.Println("Recovered in f", r)
+			}
+		}()
 
-	fmt.Printf("[%v][%v][<Dup Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, req2)
+		fmt.Printf("[%v][%v][<Dup Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, prettyPrintRequest(req2))
 
-	resp, err := client.Do(req2)
+		resp, err := client.Do(req2)
 
-	if err != nil {
-		logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
-	} else {
-		r, e := httputil.DumpResponse(resp, true)
-		if e != nil {
-			logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
+		if err != nil {
+			logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
 		} else {
-			logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
+			r, e := httputil.DumpResponse(resp, true)
+			if e != nil {
+				logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
+			} else {
+				logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
+			}
 		}
-	}
 
-	io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close()
-	//}()
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	targetQuery := hosts.Target.RawQuery
 	req.URL.Scheme = hosts.Target.Scheme
@@ -124,6 +125,11 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
+}
+
+func prettyPrintRequest(req *http.Request) string {
+	result, _ := json.MarshalIndent(req, "", "\t")
+	return string(result)
 }
 
 func main() {
