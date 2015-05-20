@@ -80,6 +80,8 @@ func teeDirector(req *http.Request) {
 	} else {
 		req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 	}
+
+	fmt.Printf("[%v][%v][<F Request>][<%v>]\n", time.Now().Format(time.RFC3339Nano), id, prettyPrintRequest(req))
 }
 
 func logMessage(message string, id string, logObj interface{}) {
