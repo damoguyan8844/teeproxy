@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 func clientCall(id string, req, req2 *http.Request) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println("Recovered in f", r)
+			fmt.Println("Recovered in clientCall", r, debug.Stack())
 		}
 	}()
 
@@ -52,15 +53,16 @@ func clientCall(id string, req, req2 *http.Request) {
 		logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
 	} else {
 		r, e := httputil.DumpResponse(resp, true)
+
 		if e != nil {
 			logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
 		} else {
 			logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
 		}
-	}
 
-	io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close()
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}
 }
 
 func teeDirector(req *http.Request) {
