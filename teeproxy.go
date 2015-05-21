@@ -120,6 +120,7 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 		Header:        request.Header,
 		Body:          bodyReader,
 		ContentLength: request.ContentLength,
+		Close:         false,
 	}
 
 	return request2
