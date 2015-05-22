@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -48,21 +47,20 @@ func clientCall(id string, req, req2 *http.Request) {
 	}()
 
 	resp, err := client.Do(req2)
-
 	if err != nil {
-		logMessage("[%v][%v][<B Error>][<%v>]\n", id, err)
-	} else {
-		r, e := httputil.DumpResponse(resp, true)
-
-		if e != nil {
-			logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
-		} else {
-			logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
-		}
-
-		io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
+		fmt.Printf("[%v][%v][<B Error>][<%v>][Request: %+v]\n", time.Now().Format(time.RFC3339Nano), id, err, req2)
+		return
 	}
+
+	r, e := httputil.DumpResponse(resp, true)
+	if e != nil {
+		logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
+	} else {
+		logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
+	}
+
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
 }
 
 func teeDirector(req *http.Request) {
@@ -134,11 +132,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		logMessage("[%v][%v][<In Req>][<%v>]\n", "", string(dump))
 	}
 	proxy.ServeHTTP(w, r)
-}
-
-func prettyPrintRequest(req *http.Request) string {
-	result, _ := json.MarshalIndent(req, "", "\t")
-	return string(result)
 }
 
 func main() {
