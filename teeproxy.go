@@ -20,6 +20,19 @@ var (
 	listen           = flag.String("l", ":8888", "port to accept requests")
 	targetProduction = flag.String("a", "http://localhost:8080", "where production traffic goes. http://localhost:8080/production")
 	altTarget        = flag.String("b", "http://localhost:8081", "where testing traffic goes. response are skipped. http://localhost:8081/test")
+
+	// Hop-by-hop headers. These are removed when sent to the backend.
+	// http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
+	hopHeaders = []string{
+		"Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te", // canonicalized version of "TE"
+		"Trailers",
+		"Transfer-Encoding",
+		"Upgrade",
+	}
 )
 
 type Hosts struct {
@@ -121,7 +134,32 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 		Close:         false,
 	}
 
+	// Remove hop-by-hop headers to the backend.  Especially
+	// important is "Connection" because we want a persistent
+	// connection, regardless of what the client sent to us.  This
+	// is modifying the same underlying map from req (shallow
+	// copied above) so we only copy it if necessary.
+	copiedHeaders := false
+	for _, h := range hopHeaders {
+		if request2.Header.Get(h) != "" {
+			if !copiedHeaders {
+				request2.Header = make(http.Header)
+				copyHeader(request2.Header, request.Header)
+				copiedHeaders = true
+			}
+			request2.Header.Del(h)
+		}
+	}
+
 	return request2
+}
+
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
