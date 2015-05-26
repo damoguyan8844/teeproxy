@@ -59,7 +59,7 @@ func clientCall(id string, req, req2 *http.Request) {
 		}
 	}()
 
-	resp, err := client.Do(req2)
+	resp, err := http.DefaultTransport.RoundTrip(req2)
 	if err != nil {
 		fmt.Printf("[%v][%v][<B Error>][<%v>][Request: %+v]\n", time.Now().Format(time.RFC3339Nano), id, err, req2)
 		return
