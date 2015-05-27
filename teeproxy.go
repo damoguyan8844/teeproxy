@@ -55,21 +55,21 @@ func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 func clientCall(id string, req, req2 *http.Request) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println("Recovered in clientCall", r, debug.Stack())
+			logMessage(id, "ERROR", fmt.Sprintf("Recovered in clientCall: <%v> <%s>", r, removeEndsOfLines(string(debug.Stack()))))
 		}
 	}()
 
 	resp, err := http.DefaultTransport.RoundTrip(req2)
 	if err != nil {
-		fmt.Printf("[%v][%v][<B Error>][<%v>][Request: %+v]\n", time.Now().Format(time.RFC3339Nano), id, err, req2)
+		logMessage(id, "ERROR", fmt.Sprintf("Invoking client failed: <%v>. Request: <%s>.", err, prettyPrint(req2)))
 		return
 	}
 
 	r, e := httputil.DumpResponse(resp, true)
 	if e != nil {
-		logMessage("[%v][%v][<B Error Dump>][<%v>]\n", id, e)
+		logMessage(id, "ERROR", fmt.Sprintf("Could not create response dump: <%v>", e))
 	} else {
-		logMessage("[%v][%v][<B Resp>][<%v>]\n", id, string(r))
+		logMessage(id, "INFO", fmt.Sprintf("Response: <%s>", removeEndsOfLines(string(r))))
 	}
 
 	io.Copy(ioutil.Discard, resp.Body)
@@ -78,7 +78,7 @@ func clientCall(id string, req, req2 *http.Request) {
 
 func teeDirector(req *http.Request) {
 	id := uuid.NewUUID().String()
-	fmt.Printf("[%v][%v][<Request>][<%+v>]\n", time.Now().Format(time.RFC3339Nano), id, req)
+	logMessage(id, "INFO", fmt.Sprintf("Request: <%s>", prettyPrint(req)))
 
 	go clientCall(id, req, duplicateRequest(req))
 
@@ -91,22 +91,6 @@ func teeDirector(req *http.Request) {
 	} else {
 		req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 	}
-}
-
-func logMessage(message string, id string, logObj interface{}) {
-	fmt.Printf(message, time.Now().Format(time.RFC3339Nano), id, logObj)
-}
-
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
 }
 
 func duplicateRequest(request *http.Request) (request1 *http.Request) {
@@ -163,13 +147,32 @@ func copyHeader(dst, src http.Header) {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	dump, e := httputil.DumpRequest(r, true)
-	if e != nil {
-		logMessage("[%v][%v][<In Error Dump>][<%v>]\n", "", e)
-	} else {
-		logMessage("[%v][%v][<In Req>][<%v>]\n", "", string(dump))
-	}
 	proxy.ServeHTTP(w, r)
+}
+
+// want to keep log messages on a single line, one line is one log entry
+func removeEndsOfLines(s string) string {
+	return strings.Replace(strings.Replace(s, "\n", "\\n", -1), "\r", "\\r", -1)
+}
+
+func prettyPrint(obj interface{}) string {
+	return removeEndsOfLines(fmt.Sprintf("%+v", obj))
+}
+
+func logMessage(id, messageType, message string) {
+	fmt.Printf("[%s][%s][%s][%s]\n", time.Now().Format(time.RFC3339Nano), id, messageType, message)
+}
+
+func singleJoiningSlash(a, b string) string {
+	aslash := strings.HasSuffix(a, "/")
+	bslash := strings.HasPrefix(b, "/")
+	switch {
+	case aslash && bslash:
+		return a + b[1:]
+	case !aslash && !bslash:
+		return a + "/" + b
+	}
+	return a + b
 }
 
 func main() {
