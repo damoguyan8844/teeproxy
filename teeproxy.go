@@ -82,7 +82,9 @@ func clientCall(id string, req *http.Request) {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 
-		if resp.StatusCode < 500 || resp.StatusCode >= 600 {
+		// Want to retry server errors like gateway time-out, bad gateway, service unavailable etc.
+		// We specifically don't want to retry 500 as that means request reached the server
+		if resp.StatusCode < 501 || resp.StatusCode >= 600 {
 			return
 		}
 
