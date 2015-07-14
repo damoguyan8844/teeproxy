@@ -20,6 +20,8 @@ var (
 	listen           = flag.String("l", ":8888", "port to accept requests")
 	targetProduction = flag.String("a", "http://localhost:8080", "where production traffic goes. http://localhost:8080/production")
 	altTarget        = flag.String("b", "http://localhost:8081", "where testing traffic goes. response are skipped. http://localhost:8081/test")
+	retryCount       = flag.Int("rc", 3, "how many times to retry on alternative destination server errors")
+	retryTimeoutMs   = flag.Int("rt", 1000, "timeout in milliseconds between retries on alternative destination server errors")
 
 	// Hop-by-hop headers. These are removed when sent to the backend.
 	// http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
@@ -41,7 +43,6 @@ type Hosts struct {
 }
 
 var hosts Hosts
-var client *http.Client
 var proxy *httputil.ReverseProxy
 
 type TimeoutTransport struct {
@@ -52,35 +53,60 @@ func (t *TimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return t.Transport.RoundTrip(req)
 }
 
-func clientCall(id string, req, req2 *http.Request) {
+func clientCall(id string, req *http.Request) {
 	defer func() {
 		if r := recover(); r != nil {
 			logMessage(id, "ERROR", fmt.Sprintf("Recovered in clientCall: <%v> <%s>", r, removeEndsOfLines(string(debug.Stack()))))
 		}
 	}()
 
-	resp, err := http.DefaultTransport.RoundTrip(req2)
-	if err != nil {
-		logMessage(id, "ERROR", fmt.Sprintf("Invoking client failed: <%v>. Request: <%s>.", err, prettyPrint(req2)))
-		return
+	// once request is send, the body is read and is empty for second try, need to recreate body reader each time request is made
+	req2, bodyBytes := duplicateRequest(req)
+
+	for retry := 0; retry < *retryCount; retry++ {
+		req2.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+		resp, err := http.DefaultTransport.RoundTrip(req2)
+		if err != nil {
+			logMessage(id, "ERROR", fmt.Sprintf("Invoking client failed: <%v>. Request: <%s>.", err, prettyPrint(req2)))
+			return
+		}
+
+		r, e := httputil.DumpResponse(resp, true)
+		if e != nil {
+			logMessage(id, "ERROR", fmt.Sprintf("Could not create response dump: <%v>", e))
+		} else {
+			logMessage(id, "INFO", fmt.Sprintf("Response: <%s>", removeEndsOfLines(string(r))))
+		}
+
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode < 500 || resp.StatusCode >= 600 {
+			return
+		}
+
+		if retry+1 != *retryCount {
+			logMessage(id, "WARN", fmt.Sprintf("Received 5xx response. Retrying request %v/%v", retry+2, *retryCount))
+			time.Sleep(time.Duration(*retryTimeoutMs) * time.Millisecond)
+		}
 	}
 
-	r, e := httputil.DumpResponse(resp, true)
-	if e != nil {
-		logMessage(id, "ERROR", fmt.Sprintf("Could not create response dump: <%v>", e))
-	} else {
-		logMessage(id, "INFO", fmt.Sprintf("Response: <%s>", removeEndsOfLines(string(r))))
-	}
-
-	io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close()
+	logMessage(id, "ERROR", "Request failed")
 }
 
 func teeDirector(req *http.Request) {
 	id := uuid.NewUUID().String()
-	logMessage(id, "INFO", fmt.Sprintf("Request: <%s>", prettyPrint(req)))
 
-	go clientCall(id, req, duplicateRequest(req))
+	r, e := httputil.DumpRequest(req, true)
+	if e != nil {
+		logMessage(id, "ERROR", fmt.Sprintf("Could not create request dump: <%v>", e))
+		r = []byte{}
+	}
+
+	logMessage(id, "INFO", fmt.Sprintf("Request: <%s>", removeEndsOfLines(string(r))))
+
+	go clientCall(id, req)
 
 	targetQuery := hosts.Target.RawQuery
 	req.URL.Scheme = hosts.Target.Scheme
@@ -93,13 +119,14 @@ func teeDirector(req *http.Request) {
 	}
 }
 
-func duplicateRequest(request *http.Request) (request1 *http.Request) {
+// return copied request with empty body and request body bytes, this is because each time request is sent body is read and emptied
+// we want to send same request multiple times, so returning body bytes to use for setting up body reader on each new request
+func duplicateRequest(request *http.Request) (*http.Request, []byte) {
 	b1 := new(bytes.Buffer)
 	b2 := new(bytes.Buffer)
 	w := io.MultiWriter(b1, b2)
 	io.Copy(w, request.Body)
 	request.Body = ioutil.NopCloser(bytes.NewReader(b2.Bytes()))
-	bodyReader := ioutil.NopCloser(bytes.NewReader(b1.Bytes()))
 
 	request2 := &http.Request{
 		Method: request.Method,
@@ -113,7 +140,6 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 		ProtoMajor:    request.ProtoMajor,
 		ProtoMinor:    request.ProtoMinor,
 		Header:        request.Header,
-		Body:          bodyReader,
 		ContentLength: request.ContentLength,
 		Close:         false,
 	}
@@ -135,7 +161,7 @@ func duplicateRequest(request *http.Request) (request1 *http.Request) {
 		}
 	}
 
-	return request2
+	return request2, b1.Bytes()
 }
 
 func copyHeader(dst, src http.Header) {
@@ -180,9 +206,6 @@ func main() {
 
 	target, _ := url.Parse(*targetProduction)
 	alt, _ := url.Parse(*altTarget)
-	client = &http.Client{
-		Timeout: time.Millisecond * 2000,
-	}
 
 	hosts = Hosts{
 		Target:      *target,
