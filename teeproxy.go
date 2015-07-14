@@ -21,7 +21,7 @@ var (
 	targetProduction = flag.String("a", "http://localhost:8080", "where production traffic goes. http://localhost:8080/production")
 	altTarget        = flag.String("b", "http://localhost:8081", "where testing traffic goes. response are skipped. http://localhost:8081/test")
 	retryCount       = flag.Int("rc", 3, "how many times to retry on alternative destination server errors")
-	retryTimeoutMs   = flag.Int("rt", 1000, "timeout in milliseconds between retries on alternative destination server errors")
+	retryTimeoutMs   = flag.Int("rt", 250, "timeout in milliseconds between retries on alternative destination server errors")
 
 	// Hop-by-hop headers. These are removed when sent to the backend.
 	// http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
