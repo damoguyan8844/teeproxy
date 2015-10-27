@@ -1,0 +1,1 @@
+teeproxy -l=":8082" -a="http://localhost:8080" -b="http://localhost:8081" -rc=4 -rt=2000
